@@ -4,11 +4,12 @@ LD = ld
 AS = as
 
 CFLAGS = -m32 -ffreestanding -O2 -Wall -Wextra -nostdinc \
-         -fno-builtin -fno-stack-protector -I.
+         -fno-builtin -fno-stack-protector -I. -Isrc
+
 ASFLAGS = --32
 LDFLAGS = -m elf_i386
 
-OBJS = boot.o kernel.o serial.o string.o
+OBJS = boot.o kernel.o serial.o string.o src/memory.o
 
 all: kernel.elf
 

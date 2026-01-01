@@ -2,7 +2,7 @@
 #include "types.h"
 #include "serial.h"
 #include "string.h"
-
+#include "memory.h"
 #define MAX_INPUT 128
 
 void kmain(void) {
@@ -12,6 +12,18 @@ void kmain(void) {
     /* Initialize hardware */
     serial_init();
     
+
+    memory_init();
+
+    void *a = kmalloc(100);
+    void *b = kmalloc(200);
+    void *s = alloc_stack();
+
+    if (a && b && s)
+        serial_puts("Memory manager OK\n");
+    else
+        serial_puts("Memory manager FAILED\n");
+
     /* Print welcome message */
     serial_puts("\n");
     serial_puts("========================================\n");
