@@ -91,6 +91,17 @@ process_t* process_current(void) {
     return process_get(g_current_pid);
 }
 
+uint32_t process_capacity(void) {
+    return PROCESS_MAX;
+}
+
+process_t* process_at(uint32_t index) {
+    if (index >= PROCESS_MAX) {
+        return NULL;
+    }
+    return &g_process_table[index];
+}
+
 uint32_t process_count(void) {
     uint32_t count = 0;
     for (uint32_t i = 0; i < PROCESS_MAX; i++) {

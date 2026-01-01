@@ -9,6 +9,147 @@
 
 extern uint32_t __kernel_end;
 
+static void serial_put_u32(uint32_t value) {
+    char buf[11];
+    uint32_t i = 0;
+
+    if (value == 0) {
+        serial_putc('0');
+        return;
+    }
+
+    while (value > 0 && i < sizeof(buf)) {
+        buf[i++] = (char)('0' + (value % 10));
+        value /= 10;
+    }
+
+    while (i > 0) {
+        serial_putc(buf[--i]);
+    }
+}
+
+static uint32_t parse_u32(const char* s, uint32_t* out_ok) {
+    uint32_t value = 0;
+    uint32_t ok = 0;
+
+    if (!s || !*s) {
+        if (out_ok) *out_ok = 0;
+        return 0;
+    }
+
+    while (*s == ' ') s++;
+    while (*s >= '0' && *s <= '9') {
+        ok = 1;
+        value = (value * 10) + (uint32_t)(*s - '0');
+        s++;
+    }
+
+    if (out_ok) *out_ok = ok;
+    return value;
+}
+
+static int starts_with(const char* s, const char* prefix) {
+    if (!s || !prefix) return 0;
+    while (*prefix) {
+        if (*s++ != *prefix++) return 0;
+    }
+    return 1;
+}
+
+static void dummy_process(void* arg) {
+    const char* tag = (const char*)arg;
+    serial_puts("[dummy] running: ");
+    serial_puts(tag ? tag : "(null)");
+    serial_puts("\n");
+}
+
+static void cmd_ps(void) {
+    serial_puts("PID\tSTATE\t\tNAME\n");
+    for (uint32_t i = 0; i < process_capacity(); i++) {
+        process_t* p = process_at(i);
+        if (!p || !p->used || p->state == PROCESS_STATE_UNUSED) {
+            continue;
+        }
+        serial_put_u32(p->pid);
+        serial_puts("\t");
+        serial_puts(process_state_str(p->state));
+        serial_puts("\t");
+        if (p->state == PROCESS_STATE_WAITING_IPC) {
+            serial_puts("\t");
+        }
+        serial_puts(p->name);
+        serial_puts("\n");
+    }
+}
+
+static void cmd_spawn(uint32_t n) {
+    if (n == 0) {
+        serial_puts("spawn: provide N > 0\n");
+        return;
+    }
+
+    uint32_t created = 0;
+    for (uint32_t i = 0; i < n; i++) {
+        int32_t pid = process_create("dummy", dummy_process, "dummy", 0);
+        if (pid < 0) {
+            serial_puts("spawn: failed at i=");
+            serial_put_u32(i);
+            serial_puts(" err=");
+            serial_put_u32((uint32_t)(-pid));
+            serial_puts("\n");
+            break;
+        }
+        created++;
+        serial_puts("spawned pid=");
+        serial_put_u32((uint32_t)pid);
+        serial_puts("\n");
+    }
+
+    serial_puts("spawn: created ");
+    serial_put_u32(created);
+    serial_puts(" process(es)\n");
+}
+
+static void cmd_kill(uint32_t pid) {
+    int32_t rc = process_terminate(pid, 0);
+    if (rc < 0) {
+        serial_puts("kill: failed\n");
+        return;
+    }
+    serial_puts("killed pid=");
+    serial_put_u32(pid);
+    serial_puts("\n");
+}
+
+static void cmd_run(uint32_t pid) {
+    process_t* p = process_get(pid);
+    if (!p) {
+        serial_puts("run: no such pid\n");
+        return;
+    }
+    if (!p->entry) {
+        serial_puts("run: no entry function\n");
+        return;
+    }
+
+    int32_t rc = process_set_current(pid);
+    if (rc < 0) {
+        serial_puts("run: cannot set current\n");
+        return;
+    }
+
+    serial_puts("run: executing pid=");
+    serial_put_u32(pid);
+    serial_puts("\n");
+
+    p->entry(p->arg);
+
+    process_terminate(pid, 0);
+    serial_puts("run: finished pid=");
+    serial_put_u32(pid);
+    serial_puts("\n");
+}
+
 void kmain(void) {
     char input[MAX_INPUT];
     int pos = 0;
@@ -71,6 +212,7 @@ void kmain(void) {
     serial_puts("========================================\n");
     serial_puts("Hello from kacchiOS!\n");
     serial_puts("Running null process...\n\n");
+    serial_puts("Commands: ps | spawn N | run PID | kill PID\n\n");
 
     /* Main loop - the "null process" */
     while (1) {
@@ -95,9 +237,35 @@ void kmain(void) {
         }
 
         if (pos > 0) {
-            serial_puts("You typed: ");
-            serial_puts(input);
-            serial_puts("\n");
+            if (strcmp(input, "ps") == 0) {
+                cmd_ps();
+            } else if (starts_with(input, "spawn ")) {
+                uint32_t ok = 0;
+                uint32_t n = parse_u32(input + 6, &ok);
+                if (!ok) {
+                    serial_puts("usage: spawn N\n");
+                } else {
+                    cmd_spawn(n);
+                }
+            } else if (starts_with(input, "run ")) {
+                uint32_t ok = 0;
+                uint32_t pid = parse_u32(input + 4, &ok);
+                if (!ok) {
+                    serial_puts("usage: run PID\n");
+                } else {
+                    cmd_run(pid);
+                }
+            } else if (starts_with(input, "kill ")) {
+                uint32_t ok = 0;
+                uint32_t pid = parse_u32(input + 5, &ok);
+                if (!ok) {
+                    serial_puts("usage: kill PID\n");
+                } else {
+                    cmd_kill(pid);
+                }
+            } else {
+                serial_puts("Unknown command. Try: ps | spawn N | run PID | kill PID\n");
+            }
         }
     }
 

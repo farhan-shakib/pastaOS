@@ -63,6 +63,10 @@ int32_t process_terminate(uint32_t pid, int32_t exit_code);
 process_t* process_get(uint32_t pid);
 process_t* process_current(void);
 
+// Process table enumeration helpers
+uint32_t process_capacity(void);
+process_t* process_at(uint32_t index);
+
 uint32_t process_count(void);
 const char* process_state_str(process_state_t state);
 
