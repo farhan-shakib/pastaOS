@@ -3,6 +3,7 @@
 #include "serial.h"
 #include "string.h"
 #include "src/memory.h"
+#include "src/process.h"
 
 #define MAX_INPUT 128
 
@@ -18,6 +19,10 @@ void kmain(void) {
     /* Initialize memory manager (heap + stack) */
     memory_init((uint32_t)&__kernel_end);
     serial_puts("Memory manager initialized\n\n");
+
+    /* Initialize process manager */
+    process_init();
+    serial_puts("Process manager initialized\n\n");
 
     /* ================= HEAP TESTS ================= */
     serial_puts("=== HEAP TESTS ===\n");
