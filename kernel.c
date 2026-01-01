@@ -4,6 +4,7 @@
 #include "string.h"
 #include "src/memory.h"
 #include "src/process.h"
+#include "src/scheduler.h"
 
 #define MAX_INPUT 128
 
@@ -323,6 +324,25 @@ static void cmd_runq(void) {
     serial_puts(" process(es)\n");
 }
 
+static void cmd_sched_stats(void) {
+    scheduler_stats_t stats = scheduler_get_stats();
+    serial_puts("=== Scheduler Statistics ===\n");
+    serial_puts("Context switches: ");
+    serial_put_u32(stats.total_context_switches);
+    serial_puts("\n");
+    serial_puts("Quantum expiries: ");
+    serial_put_u32(stats.total_quantum_expiries);
+    serial_puts("\n");
+    serial_puts("Current quantum used: ");
+    serial_put_u32(stats.current_quantum_used);
+    serial_puts("/");
+    serial_put_u32(scheduler_get_quantum());
+    serial_puts(" ms\n");
+    serial_puts("Ready queue size: ");
+    serial_put_u32(scheduler_ready_queue_size());
+    serial_puts("\n");
+}
+
 void kmain(void) {
     char input[MAX_INPUT];
     int pos = 0;
@@ -337,6 +357,10 @@ void kmain(void) {
     /* Initialize process manager */
     process_init();
     serial_puts("Process manager initialized\n\n");
+
+    /* Initialize scheduler */
+    scheduler_init(SCHEDULER_DEFAULT_QUANTUM);
+    serial_puts("Scheduler initialized (Round-Robin)\n\n");
 
     // Hardcoded ready processes for quick testing
     process_create("p1", proc_p1, NULL, 0);
@@ -390,7 +414,7 @@ void kmain(void) {
     serial_puts("========================================\n");
     serial_puts("Hello from kacchiOS!\n");
     serial_puts("Running null process...\n\n");
-    serial_puts("Commands: ps | spawn N | run PID | runq | kill PID\n\n");
+    serial_puts("Commands: ps | spawn N | run PID | runq | kill PID | sched\n\n");
 
     /* Main loop - the "null process" */
     while (1) {
@@ -443,8 +467,10 @@ void kmain(void) {
                 }
             } else if (strcmp(input, "runq") == 0) {
                 cmd_runq();
+            } else if (strcmp(input, "sched") == 0) {
+                cmd_sched_stats();
             } else {
-                serial_puts("Unknown command. Try: ps | spawn N | run PID | runq | kill PID\n");
+                serial_puts("Unknown command. Try: ps | spawn N | run PID | runq | kill PID | sched\n");
             }
         }
     }
