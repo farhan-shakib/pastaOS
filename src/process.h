@@ -70,6 +70,13 @@ process_t* process_at(uint32_t index);
 uint32_t process_count(void);
 const char* process_state_str(process_state_t state);
 
+// Ready queue (FIFO of PIDs)
+// Enqueue is typically done automatically by process_create().
+int32_t process_readyq_enqueue(uint32_t pid);
+int32_t process_readyq_dequeue(uint32_t* out_pid);
+uint32_t process_readyq_count(void);
+void process_readyq_clear(void);
+
 // IPC
 // Returns 0 on success, negative error code on failure.
 int32_t ipc_send(uint32_t to_pid, const void* data, uint32_t length);

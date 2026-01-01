@@ -150,6 +150,34 @@ static void cmd_run(uint32_t pid) {
     serial_puts("\n");
 }
 
+static void cmd_runq(void) {
+    uint32_t ran = 0;
+    while (1) {
+        uint32_t pid = 0;
+        int32_t rc = process_readyq_dequeue(&pid);
+        if (rc < 0) {
+            break;
+        }
+
+        process_t* p = process_get(pid);
+        if (!p || !p->entry) {
+            continue;
+        }
+
+        // Simulated "dispatch": RUNNING -> call entry -> TERMINATED
+        if (process_set_current(pid) < 0) {
+            continue;
+        }
+        p->entry(p->arg);
+        process_terminate(pid, 0);
+        ran++;
+    }
+
+    serial_puts("runq: executed ");
+    serial_put_u32(ran);
+    serial_puts(" process(es)\n");
+}
+
 void kmain(void) {
     char input[MAX_INPUT];
     int pos = 0;
@@ -164,6 +192,11 @@ void kmain(void) {
     /* Initialize process manager */
     process_init();
     serial_puts("Process manager initialized\n\n");
+
+    // Hardcoded ready processes for quick testing
+    process_create("p1", dummy_process, "p1", 0);
+    process_create("p2", dummy_process, "p2", 0);
+    process_create("p3", dummy_process, "p3", 0);
 
     /* ================= HEAP TESTS ================= */
     serial_puts("=== HEAP TESTS ===\n");
@@ -212,7 +245,7 @@ void kmain(void) {
     serial_puts("========================================\n");
     serial_puts("Hello from kacchiOS!\n");
     serial_puts("Running null process...\n\n");
-    serial_puts("Commands: ps | spawn N | run PID | kill PID\n\n");
+    serial_puts("Commands: ps | spawn N | run PID | runq | kill PID\n\n");
 
     /* Main loop - the "null process" */
     while (1) {
@@ -263,8 +296,10 @@ void kmain(void) {
                 } else {
                     cmd_kill(pid);
                 }
+            } else if (strcmp(input, "runq") == 0) {
+                cmd_runq();
             } else {
-                serial_puts("Unknown command. Try: ps | spawn N | run PID | kill PID\n");
+                serial_puts("Unknown command. Try: ps | spawn N | run PID | runq | kill PID\n");
             }
         }
     }

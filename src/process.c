@@ -8,6 +8,17 @@ static process_t g_process_table[PROCESS_MAX];
 static uint32_t g_next_pid = 1;
 static uint32_t g_current_pid = PID_KERNEL;
 
+static uint32_t g_readyq[PROCESS_MAX];
+static uint32_t g_readyq_head = 0;
+static uint32_t g_readyq_tail = 0;
+static uint32_t g_readyq_count = 0;
+
+static void readyq_init(void) {
+    g_readyq_head = 0;
+    g_readyq_tail = 0;
+    g_readyq_count = 0;
+}
+
 static void copy_name(char dst[PROCESS_NAME_MAX], const char* src) {
     uint32_t i = 0;
     if (!src) {
@@ -58,6 +69,8 @@ void process_init(void) {
         reset_pcb(&g_process_table[i]);
     }
 
+    readyq_init();
+
     // Reserve PID 0 as the "kernel/null" process.
     g_process_table[0].used = 1;
     g_process_table[0].pid = PID_KERNEL;
@@ -76,6 +89,50 @@ void process_init(void) {
 
     g_current_pid = PID_KERNEL;
     g_next_pid = 1;
+}
+
+void process_readyq_clear(void) {
+    readyq_init();
+}
+
+uint32_t process_readyq_count(void) {
+    return g_readyq_count;
+}
+
+int32_t process_readyq_enqueue(uint32_t pid) {
+    process_t* p = process_get(pid);
+    if (!p) return -1;
+    if (p->state == PROCESS_STATE_TERMINATED || p->state == PROCESS_STATE_UNUSED) return -2;
+    if (g_readyq_count >= PROCESS_MAX) return -3;
+
+    g_readyq[g_readyq_tail] = pid;
+    g_readyq_tail = (g_readyq_tail + 1) % PROCESS_MAX;
+    g_readyq_count++;
+    return 0;
+}
+
+int32_t process_readyq_dequeue(uint32_t* out_pid) {
+    if (!out_pid) return -2;
+
+    // Skip stale entries (terminated/non-ready), keep FIFO order for valid READY ones.
+    while (g_readyq_count > 0) {
+        uint32_t pid = g_readyq[g_readyq_head];
+        g_readyq_head = (g_readyq_head + 1) % PROCESS_MAX;
+        g_readyq_count--;
+
+        process_t* p = process_get(pid);
+        if (!p) {
+            continue;
+        }
+        if (p->state != PROCESS_STATE_READY) {
+            continue;
+        }
+
+        *out_pid = pid;
+        return 0;
+    }
+
+    return -1;
 }
 
 process_t* process_get(uint32_t pid) {
@@ -151,6 +208,17 @@ int32_t process_create(const char* name, process_entry_t entry, void* arg, uint3
     p->mailbox_head = 0;
     p->mailbox_tail = 0;
     p->mailbox_count = 0;
+
+    // Newly created process is READY, so enqueue it.
+    int32_t qrc = process_readyq_enqueue(p->pid);
+    if (qrc < 0) {
+        // Roll back allocation if we can't queue it.
+        if (p->stack_base) {
+            kfree(p->stack_base);
+        }
+        reset_pcb(p);
+        return -3;
+    }
 
     return (int32_t)p->pid;
 }
