@@ -58,7 +58,10 @@ static int starts_with(const char* s, const char* prefix) {
 
 static void dummy_process(void* arg) {
     const char* tag = (const char*)arg;
-    serial_puts("[dummy] running: ");
+    process_t* p = process_current();
+    serial_puts("[dummy] pid=");
+    serial_put_u32(p ? p->pid : 0);
+    serial_puts(" running: ");
     serial_puts(tag ? tag : "(null)");
     serial_puts("\n");
 }
