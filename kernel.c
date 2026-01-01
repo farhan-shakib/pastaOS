@@ -28,6 +28,37 @@ static void serial_put_u32(uint32_t value) {
     }
 }
 
+static void serial_put_hex32(uint32_t value) {
+    static const char* hex = "0123456789ABCDEF";
+    serial_puts("0x");
+    for (int shift = 28; shift >= 0; shift -= 4) {
+        serial_putc(hex[(value >> shift) & 0xF]);
+    }
+}
+
+static uint32_t g_rng_state = 0xC0FFEE01;
+
+static uint32_t rand_u32(void) {
+    // Simple LCG (good enough for demo output)
+    g_rng_state = (1103515245u * g_rng_state) + 12345u;
+    return g_rng_state;
+}
+
+static char rand_alnum(void) {
+    const uint32_t r = rand_u32() % 62u;
+    if (r < 10u) return (char)('0' + r);
+    if (r < 36u) return (char)('A' + (r - 10u));
+    return (char)('a' + (r - 36u));
+}
+
+static void rand_string(char* out, uint32_t length) {
+    if (!out) return;
+    for (uint32_t i = 0; i < length; i++) {
+        out[i] = rand_alnum();
+    }
+    out[length] = '\0';
+}
+
 static uint32_t parse_u32(const char* s, uint32_t* out_ok) {
     uint32_t value = 0;
     uint32_t ok = 0;
@@ -56,14 +87,125 @@ static int starts_with(const char* s, const char* prefix) {
     return 1;
 }
 
+static void print_current_process_info(void) {
+    process_t* p = process_current();
+    serial_puts("[proc] pid=");
+    serial_put_u32(p ? p->pid : 0);
+    serial_puts(" name=");
+    serial_puts(p ? p->name : "(null)");
+    serial_puts(" state=");
+    serial_puts(p ? process_state_str(p->state) : "(null)");
+    serial_puts(" stack=");
+    if (p) {
+        serial_put_hex32((uint32_t)p->stack_base);
+        serial_puts("+");
+        serial_put_u32(p->stack_size);
+    } else {
+        serial_puts("(null)");
+    }
+    serial_puts(" mbox=");
+    serial_put_u32(p ? p->mailbox_count : 0);
+    serial_puts("\n");
+}
+
 static void dummy_process(void* arg) {
     const char* tag = (const char*)arg;
-    process_t* p = process_current();
-    serial_puts("[dummy] pid=");
-    serial_put_u32(p ? p->pid : 0);
-    serial_puts(" running: ");
+    print_current_process_info();
+    serial_puts("[dummy] running: ");
     serial_puts(tag ? tag : "(null)");
     serial_puts("\n");
+}
+
+static void proc_p1(void* arg) {
+    (void)arg;
+    process_t* p = process_current();
+    g_rng_state ^= (p ? (p->pid * 2654435761u) : 0x1234u);
+    print_current_process_info();
+
+    char msg[8];
+    msg[0] = 'p';
+    msg[1] = '1';
+    msg[2] = '\0';
+
+    for (uint32_t i = 0; i <= 20000u; i++) {
+        if ((i % 10u) == 0u) {
+            msg[2] = rand_alnum();
+            msg[3] = '\0';
+            serial_puts("[p1] pid=");
+            serial_put_u32(p ? p->pid : 0);
+            serial_puts(" i=");
+            serial_put_u32(i);
+            serial_puts(" msg=");
+            serial_puts(msg);
+            serial_puts("\n");
+        }
+    }
+}
+
+static void proc_p2(void* arg) {
+    (void)arg;
+    process_t* p = process_current();
+    g_rng_state ^= (p ? (p->pid * 2654435761u) : 0x5678u);
+    print_current_process_info();
+
+    char rnd[9];
+    char msg[3 + 9];
+    msg[0] = 'p';
+    msg[1] = '2';
+    msg[2] = '\0';
+
+    for (uint32_t i = 0; i <= 20000u; i++) {
+        if ((i % 10u) == 0u) {
+            rand_string(rnd, 8);
+            msg[0] = 'p';
+            msg[1] = '2';
+            for (uint32_t j = 0; j < 8u; j++) {
+                msg[2 + j] = rnd[j];
+            }
+            msg[10] = '\0';
+
+            serial_puts("[p2] pid=");
+            serial_put_u32(p ? p->pid : 0);
+            serial_puts(" i=");
+            serial_put_u32(i);
+            serial_puts(" msg=");
+            serial_puts(msg);
+            serial_puts("\n");
+        }
+    }
+}
+
+static void proc_p3(void* arg) {
+    (void)arg;
+    process_t* p = process_current();
+    g_rng_state ^= (p ? (p->pid * 2654435761u) : 0x9ABCu);
+    print_current_process_info();
+
+    char rnd[9];
+    char msg[3 + 9];
+    msg[0] = 'p';
+    msg[1] = '3';
+    msg[2] = '\0';
+
+    for (uint32_t i = 0; i <= 20000u; i++) {
+        if ((i % 10u) == 0u) {
+            rand_string(rnd, 8);
+            msg[0] = 'p';
+            msg[1] = '3';
+            for (uint32_t j = 0; j < 8u; j++) {
+                msg[2 + j] = rnd[j];
+            }
+            msg[10] = '\0';
+
+            serial_puts("[p3] pid=");
+            serial_put_u32(p ? p->pid : 0);
+            serial_puts(" i=");
+            serial_put_u32(i);
+            serial_puts(" msg=");
+            serial_puts(msg);
+            serial_puts("\n");
+        }
+    }
 }
 
 static void cmd_ps(void) {
@@ -197,9 +339,9 @@ void kmain(void) {
     serial_puts("Process manager initialized\n\n");
 
     // Hardcoded ready processes for quick testing
-    process_create("p1", dummy_process, "p1", 0);
-    process_create("p2", dummy_process, "p2", 0);
-    process_create("p3", dummy_process, "p3", 0);
+    process_create("p1", proc_p1, NULL, 0);
+    process_create("p2", proc_p2, NULL, 0);
+    process_create("p3", proc_p3, NULL, 0);
 
     /* ================= HEAP TESTS ================= */
     serial_puts("=== HEAP TESTS ===\n");
